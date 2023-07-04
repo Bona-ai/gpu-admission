@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -118,7 +119,7 @@ func (gpuFilter *GPUFilter) Filter(
 	}
 }
 
-//deviceFilter will choose one and only one node fullfil the request,
+//deviceFilter will choose one and only one node fulfill the request,
 //so it should always be the last filter of gpuFilter
 func (gpuFilter *GPUFilter) deviceFilter(
 	pod *corev1.Pod, nodes []corev1.Node) ([]corev1.Node, extenderv1.FailedNodesMap, error) {
@@ -133,13 +134,14 @@ func (gpuFilter *GPUFilter) deviceFilter(
 			device.ByAllocatableMemory,
 			device.ByID)
 	)
-	for k := range pod.Annotations {
-		if strings.Contains(k, util.GPUAssigned) ||
-			strings.Contains(k, util.PredicateTimeAnnotation) ||
-			strings.Contains(k, util.PredicateGPUIndexPrefix) {
-			return filteredNodes, failedNodesMap, fmt.Errorf("pod %s had been predicated!", pod.Name)
-		}
-	}
+	// 避免任务长期等待 - 重新选择节点进行调度
+	//for k := range pod.Annotations {
+	//	if strings.Contains(k, util.GPUAssigned) ||
+	//		strings.Contains(k, util.PredicateTimeAnnotation) ||
+	//		strings.Contains(k, util.PredicateGPUIndexPrefix) {
+	//		return filteredNodes, failedNodesMap, fmt.Errorf("pod %s had been predicated!", pod.Name)
+	//	}
+	//}
 
 	for i := range nodes {
 		node := &nodes[i]
@@ -152,6 +154,13 @@ func (gpuFilter *GPUFilter) deviceFilter(
 			failedNodesMap[node.Name] = "failed to get pods on node"
 			continue
 		}
+		// TODO 解决 libcuda.so not found  & no free node 调度问题,保证相同节点不同时调度多个pod, 最新创建的pod运行在5S内，则去除节点
+		sort.Sort(PodList(pods))
+		klog.V(4).Infof("debug: pods %d ,CreationTimestamp %d , now  %d ", len(pods), pods[0].CreationTimestamp.Unix(), time.Now().Unix())
+		if len(pods) > 0 && time.Now().Unix()-pods[0].CreationTimestamp.Unix() <= 5 {
+			continue
+		}
+
 		nodeInfo := device.NewNodeInfo(node, pods)
 		nodeInfoList = append(nodeInfoList, nodeInfo)
 	}
@@ -164,7 +173,7 @@ func (gpuFilter *GPUFilter) deviceFilter(
 				"pod %s has already been matched to another node", pod.UID)
 			continue
 		}
-
+		// 分配卡数
 		alloc := algorithm.NewAllocator(nodeInfo)
 		newPod, err := alloc.Allocate(pod)
 		if err != nil {
@@ -255,4 +264,14 @@ func (gpuFilter *GPUFilter) patchPodWithAnnotations(
 		return fmt.Errorf(msg)
 	}
 	return nil
+}
+
+type PodList []*corev1.Pod
+
+func (p PodList) Len() int { return len(p) }
+
+func (p PodList) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
+
+func (p PodList) Less(i, j int) bool {
+	return p[i].CreationTimestamp.Unix() > p[j].CreationTimestamp.Unix()
 }
