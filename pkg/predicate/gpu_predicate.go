@@ -119,8 +119,8 @@ func (gpuFilter *GPUFilter) Filter(
 	}
 }
 
-//deviceFilter will choose one and only one node fulfill the request,
-//so it should always be the last filter of gpuFilter
+// deviceFilter will choose one and only one node fulfill the request,
+// so it should always be the last filter of gpuFilter
 func (gpuFilter *GPUFilter) deviceFilter(
 	pod *corev1.Pod, nodes []corev1.Node) ([]corev1.Node, extenderv1.FailedNodesMap, error) {
 	// #lizard forgives
@@ -154,10 +154,10 @@ func (gpuFilter *GPUFilter) deviceFilter(
 			failedNodesMap[node.Name] = "failed to get pods on node"
 			continue
 		}
-		// TODO 解决 libcuda.so not found  & no free node 调度问题,保证相同节点不同时调度多个pod, 最新创建的pod运行在5S内，则去除节点
+		// TODO 解决 libcuda.so not found  & no free node 调度问题,保证相同节点不同时调度多个pod, 最新创建的pod运行在10S内，则去除节点
 		sort.Sort(PodList(pods))
-		klog.V(4).Infof("debug: pods %d ,CreationTimestamp %d , now  %d ", len(pods), pods[0].CreationTimestamp.Unix(), time.Now().Unix())
-		if len(pods) > 0 && time.Now().Unix()-pods[0].CreationTimestamp.Unix() <= 5 {
+		klog.V(4).Infof("debug: pods %d ,CreationTimestamp %d , podName %s now  %d ", len(pods), pods[0].CreationTimestamp.Unix(), pods[0].Name, time.Now().Unix())
+		if len(pods) > 0 && time.Now().Unix()-pods[0].CreationTimestamp.Unix() <= 10 {
 			continue
 		}
 
@@ -219,9 +219,8 @@ func (gpuFilter *GPUFilter) ListPodsOnNode(node *corev1.Node) ([]*corev1.Pod, er
 				predicateNode = v
 			}
 		}
-		if (pod.Spec.NodeName == node.Name || predicateNode == node.Name) &&
-			pod.Status.Phase != corev1.PodSucceeded &&
-			pod.Status.Phase != corev1.PodFailed {
+		// TODO no free node bug fix 避免调度到相同节点导致重试无效
+		if (pod.Spec.NodeName == node.Name || predicateNode == node.Name) && pod.Status.Phase != corev1.PodSucceeded {
 			ret = append(ret, pod)
 			klog.V(9).Infof("get pod %s on node %s", pod.UID, node.Name)
 		}
