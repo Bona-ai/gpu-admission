@@ -3,6 +3,7 @@ module tkestack.io/gpu-admission
 go 1.13
 
 require (
+	github.com/gogf/gf/v2 v2.4.4
 	github.com/julienschmidt/httprouter v1.3.1-0.20191005171706-08a3b3d20bbe
 	github.com/spf13/pflag v1.0.5
 	k8s.io/api v0.18.12

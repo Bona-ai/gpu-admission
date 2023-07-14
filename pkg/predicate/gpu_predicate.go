@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gogf/gf/v2/util/gconv"
 	"sort"
 	"strings"
 	"time"
@@ -154,11 +155,20 @@ func (gpuFilter *GPUFilter) deviceFilter(
 			failedNodesMap[node.Name] = "failed to get pods on node"
 			continue
 		}
-		// TODO 解决 libcuda.so not found  & no free node 调度问题,保证相同节点不同时调度多个pod, 最新创建的pod运行在10S内，则去除节点
+		// TODO 解决 libcuda.so not found  & no free node 调度问题,保证相同节点不同时调度多个pod, 最新调度的pod运行在10S内，则去除节点，不要调度
+		// 若1S 内新建多个pod ，且调度时间为空， 还是会调度到相同节点上
 		sort.Sort(PodList(pods))
-		klog.V(4).Infof("debug: pods %d ,CreationTimestamp %d , podName %s now  %d ", len(pods), pods[0].CreationTimestamp.Unix(), pods[0].Name, time.Now().Unix())
-		if len(pods) > 0 && time.Now().Unix()-pods[0].CreationTimestamp.Unix() <= 10 {
-			continue
+		if len(pods) > 0 {
+			podPredicateTime := pods[0].CreationTimestamp.Unix()
+			if pods[0].Annotations != nil {
+				if v, ok := pods[0].Annotations[util.PredicateTimeAnnotation]; ok {
+					podPredicateTime = gconv.Int64(v)
+				}
+			}
+			klog.V(4).Infof("debug: pods %d ,current node %s , podName %s  , current time %d , newest pod time %d ", len(pods), node.Name, pods[0].Name, time.Now().UnixNano()/1e9, podPredicateTime/1e9)
+			if time.Now().UnixNano()/1e9-podPredicateTime/1e9 <= 10 {
+				continue
+			}
 		}
 
 		nodeInfo := device.NewNodeInfo(node, pods)
@@ -271,6 +281,7 @@ func (p PodList) Len() int { return len(p) }
 
 func (p PodList) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
 
+// 按照调度时间升序排序
 func (p PodList) Less(i, j int) bool {
 	return p[i].CreationTimestamp.Unix() > p[j].CreationTimestamp.Unix()
 }
