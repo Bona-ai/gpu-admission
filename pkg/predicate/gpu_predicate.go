@@ -230,7 +230,7 @@ func (gpuFilter *GPUFilter) ListPodsOnNode(node *corev1.Node) ([]*corev1.Pod, er
 			}
 		}
 		// TODO no free node bug fix 避免调度到相同节点导致重试无效
-		if (pod.Spec.NodeName == node.Name || predicateNode == node.Name) && pod.Status.Phase != corev1.PodSucceeded {
+		if (pod.Spec.NodeName == node.Name || predicateNode == node.Name) && pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed {
 			ret = append(ret, pod)
 			klog.V(9).Infof("get pod %s on node %s", pod.UID, node.Name)
 		}
